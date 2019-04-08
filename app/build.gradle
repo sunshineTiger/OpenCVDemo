@@ -31,9 +31,9 @@ dependencies {
     testImplementation 'junit:junit:4.12'
     androidTestImplementation 'com.android.support.test:runner:1.0.2'
     androidTestImplementation 'com.android.support.test.espresso:espresso-core:3.0.2'
-    implementation project(':openCVLibrary320')
     //将打好jar包，添加到依赖中
-//    implementation fileTree(dir: "$buildDir/native-libs", include: 'native-libs.jar')
+    //    implementation fileTree(dir: "$buildDir/native-libs", include: 'native-libs.jar')
+    implementation project(':OpenCVLibrary320')
 }
 //以下很重要 //将添加的.so文件，打包成jar
 //task nativeLibsToJar(type: Jar, description: 'create a jar archive of the native libs') {

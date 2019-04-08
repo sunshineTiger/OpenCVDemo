@@ -9,51 +9,20 @@ import android.view.WindowManager;
 
 import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.CameraBridgeViewBase;
+import org.opencv.android.InstallCallbackInterface;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
+import org.opencv.core.Core;
+import org.opencv.core.CvType;
 import org.opencv.core.Mat;
-
+import org.opencv.imgproc.Imgproc;
 
 public class MainActivity extends AppCompatActivity implements CameraBridgeViewBase.CvCameraViewListener2 {
+
     private CameraBridgeViewBase mCameraView;
-
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        requestWindowFeature(Window.FEATURE_NO_TITLE);
-        getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        setContentView(R.layout.activity_main);
-        mCameraView = findViewById(R.id.myJavaCameraView);
-        CameraInit();
-    }
-
-    private void CameraInit() {
-        mCameraView.setVisibility(SurfaceView.VISIBLE);
-        mCameraView.setCameraIndex(0);//0前置 1后置
-        mCameraView.setCvCameraViewListener(this);
-        mCameraView.enableFpsMeter();
-//        if (mCameraView != null) {
-//            mCameraView.disableView();
-//        }
-//        mCameraView.enableView();
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-//        mCameraView.enableView();
-//        mLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
-
-        if (!OpenCVLoader.initDebug()) {
-            Log.d(Constant.TAG, "Internal OpenCV library not found. Using OpenCV Manager for initialization");
-            OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_3_2_0, this, mLoaderCallback);
-        } else {
-            Log.d(Constant.TAG, "OpenCV library found inside package. Using it!");
-            mLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
-        }
-    }
-
-
+    Mat mRgba;
+    Mat mRgbaF;
+    Mat mRgbaT;
 
     private BaseLoaderCallback mLoaderCallback = new BaseLoaderCallback(this) {
         @Override
@@ -75,21 +44,88 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             }
         }
 
+        @Override
+        public void onPackageInstall(int operation, InstallCallbackInterface callback) {
+            super.onPackageInstall(operation, callback);
+        }
     };
 
     @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        requestWindowFeature(Window.FEATURE_NO_TITLE);
+        getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        setContentView(R.layout.activity_main);
+        mCameraView = findViewById(R.id.myJavaCameraView);
+        CameraInit();
+    }
+
+    private void CameraInit() {
+        mCameraView.setVisibility(SurfaceView.VISIBLE);
+        mCameraView.setCameraIndex(0);//0前置 1后置
+        mCameraView.setCvCameraViewListener(this);
+        mCameraView.enableFpsMeter();
+    }
+
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        //mLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
+        if (!OpenCVLoader.initDebug()) {
+            Log.d(Constant.TAG, "Internal OpenCV library not found. Using OpenCV Manager for initialization");
+            OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_3_0_0, this, mLoaderCallback);
+        } else {
+            Log.d(Constant.TAG, "OpenCV library found inside package. Using it!");
+            mLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (null != mCameraView) {
+            mCameraView.disableView();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (null != mCameraView) {
+            mCameraView.disableView();
+            mCameraView = null;
+        }
+    }
+
+    @Override
     public void onCameraViewStarted(int width, int height) {
-        Log.v(Constant.TAG, "------->>>>>>>onCameraViewStarted");
+        mRgba = new Mat(height, width, CvType.CV_8UC4);
+        mRgbaF = new Mat(height, width, CvType.CV_8UC4);
+        mRgbaT = new Mat(width, width, CvType.CV_8UC4);
     }
 
     @Override
     public void onCameraViewStopped() {
         Log.v(Constant.TAG, "------->>>>>>>onCameraViewStopped");
+        mRgba.release();
     }
+
+    /**
+     * 图像处理都写在此处
+     */
 
     @Override
     public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
-        Log.v(Constant.TAG, "------->>>>>>>onCameraFrame");
-        return inputFrame.rgba();
+        //Log.v(Constant.TAG, "------->>>>>>>onCameraFrame");
+        //返回处理后的结果数据
+        // TODO Auto-generated method stub
+        mRgba = inputFrame.rgba();
+        // Rotate mRgba 90 degrees
+        Core.transpose(mRgba, mRgbaT);
+        Imgproc.resize(mRgbaT, mRgbaF, mRgbaF.size(), 0,0, 0);
+        Core.flip(mRgbaF, mRgba, 1 );
+
+        return mRgba; // This function must return
     }
 }
