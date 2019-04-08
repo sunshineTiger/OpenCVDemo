@@ -57,6 +57,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
         setContentView(R.layout.activity_main);
         mCameraView = findViewById(R.id.myJavaCameraView);
+
         CameraInit();
     }
 
@@ -64,6 +65,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         mCameraView.setVisibility(SurfaceView.VISIBLE);
         mCameraView.setCameraIndex(0);//0前置 1后置
         mCameraView.setCvCameraViewListener(this);
+
         mCameraView.enableFpsMeter();
     }
 
@@ -122,10 +124,12 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         // TODO Auto-generated method stub
         mRgba = inputFrame.rgba();
         // Rotate mRgba 90 degrees
-        Core.transpose(mRgba, mRgbaT);
-        Imgproc.resize(mRgbaT, mRgbaF, mRgbaF.size(), 0,0, 0);
-        Core.flip(mRgbaF, mRgba, 1 );
+//        Core.transpose(mRgba, mRgbaT);
+//        Imgproc.resize(mRgbaT, mRgbaF, mRgbaF.size(), 0,0, 0);
+//        Core.flip(mRgbaF, mRgba, 1 );
 
         return mRgba; // This function must return
     }
+
+
 }

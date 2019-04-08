@@ -47,6 +47,7 @@ public class JavaCameraView extends CameraBridgeViewBase implements PreviewCallb
         @Override
         public int getWidth(Object obj) {
             Camera.Size size = (Camera.Size) obj;
+
             return size.width;
         }
 
@@ -158,8 +159,9 @@ public class JavaCameraView extends CameraBridgeViewBase implements PreviewCallb
 
                     mCamera.setParameters(params);
                     params = mCamera.getParameters();
-
+                    Log.v("--->>>>", "" + params.getPreviewSize().width);
                     mFrameWidth = params.getPreviewSize().width;
+                    Log.v("--->>>>", "" + params.getPreviewSize().height);
                     mFrameHeight = params.getPreviewSize().height;
 
                     if ((getLayoutParams().width == LayoutParams.MATCH_PARENT) && (getLayoutParams().height == LayoutParams.MATCH_PARENT))
