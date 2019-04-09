@@ -12,10 +12,8 @@ import org.opencv.android.CameraBridgeViewBase;
 import org.opencv.android.InstallCallbackInterface;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
-import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
-import org.opencv.imgproc.Imgproc;
 
 public class MainActivity extends AppCompatActivity implements CameraBridgeViewBase.CvCameraViewListener2 {
 
@@ -56,7 +54,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
         setContentView(R.layout.activity_main);
-        mCameraView = findViewById(R.id.myJavaCameraView);
+       mCameraView = findViewById(R.id.myJavaCameraView);
 
         CameraInit();
     }

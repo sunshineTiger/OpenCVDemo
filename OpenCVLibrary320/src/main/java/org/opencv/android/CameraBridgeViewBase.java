@@ -15,7 +15,6 @@ import android.content.res.TypedArray;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Rect;
-import android.provider.SyncStateContract;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.SurfaceHolder;
@@ -423,41 +422,38 @@ public abstract class CameraBridgeViewBase extends SurfaceView implements Surfac
             Canvas canvas = getHolder().lockCanvas();
             if (canvas != null) {
                 canvas.drawColor(0, android.graphics.PorterDuff.Mode.CLEAR);
-
                 if (BuildConfig.DEBUG)
                     Log.d(TAG, "mStretch value: " + mScale);
 
-                if (mScale != 0) {
-                    canvas.drawBitmap(mCacheBitmap, new Rect(0, 0, mCacheBitmap.getWidth(), mCacheBitmap.getHeight()),
-                            new Rect((int) ((canvas.getWidth() - mScale * mCacheBitmap.getWidth()) / 2),
-                                    (int) ((canvas.getHeight() - mScale * mCacheBitmap.getHeight()) / 2),
-                                    (int) ((canvas.getWidth() - mScale * mCacheBitmap.getWidth()) / 2 + mScale * mCacheBitmap.getWidth()),
-                                    (int) ((canvas.getHeight() - mScale * mCacheBitmap.getHeight()) / 2 + mScale * mCacheBitmap.getHeight())), null);
-                } else {
-                    canvas.drawBitmap(mCacheBitmap, new Rect(0, 0, mCacheBitmap.getWidth(), mCacheBitmap.getHeight()),
-                            new Rect((canvas.getWidth() - mCacheBitmap.getWidth()) / 2,
-                                    (canvas.getHeight() - mCacheBitmap.getHeight()) / 2,
-                                    (canvas.getWidth() - mCacheBitmap.getWidth()) / 2 + mCacheBitmap.getWidth(),
-                                    (canvas.getHeight() - mCacheBitmap.getHeight()) / 2 + mCacheBitmap.getHeight()), null);
-                }
-
+//                if (mScale != 0) {
+//                    canvas.drawBitmap(mCacheBitmap, new Rect(0,0,mCacheBitmap.getWidth(), mCacheBitmap.getHeight()),
+//                            new Rect((int)((canvas.getWidth() - mScale*mCacheBitmap.getWidth()) / 2),
+//                                    (int)((canvas.getHeight() - mScale*mCacheBitmap.getHeight()) / 2),
+//                                    (int)((canvas.getWidth() - mScale*mCacheBitmap.getWidth()) / 2 + mScale*mCacheBitmap.getWidth()),
+//                                    (int)((canvas.getHeight() - mScale*mCacheBitmap.getHeight()) / 2 + mScale*mCacheBitmap.getHeight())), null);
+//                } else {
+//                    canvas.drawBitmap(mCacheBitmap, new Rect(0,0,mCacheBitmap.getWidth(), mCacheBitmap.getHeight()),
+//                            new Rect((canvas.getWidth() - mCacheBitmap.getWidth()) / 2,
+//                                    (canvas.getHeight() - mCacheBitmap.getHeight()) / 2,
+//                                    (canvas.getWidth() - mCacheBitmap.getWidth()) / 2 + mCacheBitmap.getWidth(),
+//                                    (canvas.getHeight() - mCacheBitmap.getHeight()) / 2 + mCacheBitmap.getHeight()), null);
+//                }
                 // 修改预览旋转90度问题
-//                canvas.rotate(90,0,0);
-//                float scale = canvas.getWidth() / (float)mCacheBitmap.getHeight();
-//                float scale2 = canvas.getHeight() / (float)mCacheBitmap.getWidth();
-//                if(scale2 > scale){
-//                    scale = scale2;
-//                }
-//                if (scale != 0) {
-//                    canvas.scale(scale, scale,0,0);
-//                }
-//                canvas.drawBitmap(mCacheBitmap, 0, -mCacheBitmap.getHeight(), null);
-//                // 修改预览旋转90度问题end
-
+                canvas.rotate(90, 0, 0);
+                float scale = canvas.getWidth() / (float) mCacheBitmap.getHeight();
+                float scale2 = canvas.getHeight() / (float) mCacheBitmap.getWidth();
+                if (scale2 > scale) {
+                    scale = scale2;
+                }
+                if (scale != 0) {
+                    canvas.scale(scale, scale, 0, 0);
+                }
+                canvas.drawBitmap(mCacheBitmap, 0, -mCacheBitmap.getHeight(), null);
+                // 修改预览旋转90度问题end
 
                 if (mFpsMeter != null) {
                     mFpsMeter.measure();
-                    mFpsMeter.draw(canvas, 100, 100);
+                    mFpsMeter.draw(canvas, 20, 30);
                 }
                 getHolder().unlockCanvasAndPost(canvas);
             }
@@ -482,8 +478,6 @@ public abstract class CameraBridgeViewBase extends SurfaceView implements Surfac
 
     // NOTE: On Android 4.1.x the function must be called before SurfaceTexture constructor!
     protected void AllocateCache() {
-        Log.e("--->>>>","mFrameWidth:"+mFrameWidth);
-        Log.e("--->>>>","mFrameHeight:"+mFrameWidth);
         mCacheBitmap = Bitmap.createBitmap(mFrameWidth, mFrameHeight, Bitmap.Config.ARGB_8888);
     }
 
@@ -523,7 +517,8 @@ public abstract class CameraBridgeViewBase extends SurfaceView implements Surfac
                 }
             }
         }
-        return new Size(640, 480);
-        //return new Size(calcWidth, calcHeight);
+
+        return new Size(calcWidth, calcHeight);
+        //return new Size(1080, 1920);
     }
 }
