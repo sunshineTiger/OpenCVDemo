@@ -54,16 +54,14 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
         setContentView(R.layout.activity_main);
-       mCameraView = findViewById(R.id.myJavaCameraView);
+        mCameraView = findViewById(R.id.myJavaCameraView);
 
         CameraInit();
     }
 
     private void CameraInit() {
         mCameraView.setVisibility(SurfaceView.VISIBLE);
-        mCameraView.setCameraIndex(0);//0前置 1后置
         mCameraView.setCvCameraViewListener(this);
-
         mCameraView.enableFpsMeter();
     }
 
@@ -100,15 +98,13 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
     @Override
     public void onCameraViewStarted(int width, int height) {
-        mRgba = new Mat(height, width, CvType.CV_8UC4);
-        mRgbaF = new Mat(height, width, CvType.CV_8UC4);
-        mRgbaT = new Mat(width, width, CvType.CV_8UC4);
+
     }
 
     @Override
     public void onCameraViewStopped() {
         Log.v(Constant.TAG, "------->>>>>>>onCameraViewStopped");
-        mRgba.release();
+
     }
 
     /**

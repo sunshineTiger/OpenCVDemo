@@ -13,7 +13,7 @@ import org.opencv.core.Mat;
 import java.io.IOException;
 import java.text.DecimalFormat;
 
-public class MyCameraPreview extends SurfaceView implements SurfaceHolder.Callback, PreviewCallback {
+public class MyCameraPreview2 extends SurfaceView implements SurfaceHolder.Callback, PreviewCallback {
     private SurfaceHolder mHolder;
     long index;
     private static final DecimalFormat FPS_FORMAT = new DecimalFormat("0.00");
@@ -26,7 +26,7 @@ public class MyCameraPreview extends SurfaceView implements SurfaceHolder.Callba
     Camera.Parameters parameters;
     DoubleBufferQueue queue = DoubleBufferQueue.getInst();
 
-    public MyCameraPreview(Context context, Camera camera) {
+    public MyCameraPreview2(Context context, Camera camera) {
         super(context);
         //初始化Camera对象
         mCamera = camera;

@@ -23,7 +23,9 @@ public class CameraActivity extends AppCompatActivity {
         FrameLayout camera_preview = (FrameLayout) findViewById(R.id.camera_preview);
 
         camera_preview.addView(mPreview);
-
+        ReadThread reader = new ReadThread();
+        Thread t1 = new Thread(reader);
+        t1.start();
     }
 
     @Override

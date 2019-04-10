@@ -1,5 +1,6 @@
 package org.opencv.android;
 
+import java.lang.reflect.Method;
 import java.util.List;
 
 import android.content.Context;
@@ -42,6 +43,10 @@ public class JavaCameraView extends CameraBridgeViewBase implements PreviewCallb
     protected JavaCameraFrame[] mCameraFrame;
     private SurfaceTexture mSurfaceTexture;
 
+
+    /**
+     * 相机访问器
+     */
     public static class JavaCameraSizeAccessor implements ListItemAccessor {
 
         @Override
@@ -66,6 +71,13 @@ public class JavaCameraView extends CameraBridgeViewBase implements PreviewCallb
         super(context, attrs);
     }
 
+    /**
+     * 初始化相机
+     *
+     * @param width
+     * @param height
+     * @return
+     */
     protected boolean initializeCamera(int width, int height) {
         Log.d(TAG, "Initialize java camera");
         boolean result = true;
@@ -271,10 +283,12 @@ public class JavaCameraView extends CameraBridgeViewBase implements PreviewCallb
             Log.d(TAG, "Wating for thread");
             if (mThread != null)
                 mThread.join();
+
         } catch (InterruptedException e) {
             e.printStackTrace();
         } finally {
             mThread = null;
+
         }
 
         /* Now release camera */
@@ -326,7 +340,7 @@ public class JavaCameraView extends CameraBridgeViewBase implements PreviewCallb
         private int mHeight;
     }
 
-    ;
+
 
     private class CameraWorker implements Runnable {
 
