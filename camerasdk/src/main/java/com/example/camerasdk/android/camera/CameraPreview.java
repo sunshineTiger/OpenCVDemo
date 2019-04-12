@@ -1,72 +1,131 @@
-package org.opencv.android;
+package com.example.camerasdk.android.camera;
 
-import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.ImageFormat;
 import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
-import android.hardware.Camera.PreviewCallback;
+import android.opengl.GLES20;
+import android.opengl.GLUtils;
 import android.os.Build;
-import android.util.AttributeSet;
 import android.util.Log;
-import android.view.ViewGroup.LayoutParams;
+
+import com.example.camerasdk.DoubleBufferQueue;
+import com.example.camerasdk.FrameImageBean;
+import com.example.camerasdk.interfaces.CameraListItemAccessor;
+import com.example.camerasdk.interfaces.FrameImage;
 
 import org.opencv.BuildConfig;
+import org.opencv.android.FpsMeter;
+import org.opencv.android.Utils;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.Size;
-import org.opencv.imgproc.Imgproc;
 
+import java.util.Deque;
 import java.util.List;
 
-/**
- * This class is an implementation of the Bridge View between OpenCV and Java Camera.
- * This class relays on the functionality available in base class and only implements
- * required functions:
- * connectCamera - opens Java camera and sets the PreviewCallback to be delivered.
- * disconnectCamera - closes the camera and stops preview.
- * When frame is delivered via callback from Camera - it processed via OpenCV to be
- * converted to RGBA32 and then passed to the external callback for modifications if required.
- */
-public class JavaCameraView extends CameraBridgeViewBase implements PreviewCallback {
-
-    private static final int MAGIC_TEXTURE_ID = 10;
-    private static final String TAG = "JavaCameraView";
-
+public class CameraPreview implements Camera.PreviewCallback {
+    private static final String TAG = "CameraPreview";
+    private static final int MAGIC_TEXTURE_ID = 10;//默认TEXTURE_ID
     private byte mBuffer[];
     private Mat[] mFrameChain;
     private int mChainIdx = 0;
-    private Thread mThread;
-    private boolean mStopThread;
-
+    protected FpsMeter mFpsMeter = null;
+    private Thread mThread;//每帧处理线程
+    private boolean mStopThread;//停止标志
     protected Camera mCamera;
-    protected JavaCameraFrame[] mCameraFrame;
+    protected CameraFrameBean[] mCameraFrame;
     private SurfaceTexture mSurfaceTexture;
+    private int cameraId;
+    private boolean mCameraFrameReady = false;
+    private int width;
+    private int height;
+    public static final int CAMERA_ID_ANY = -1;
+    public static final int CAMERA_ID_BACK = 99;
+    public static final int CAMERA_ID_FRONT = 98;
+    public static final int RGBA = 1;
+    public static final int GRAY = 2;
+    protected int mCameraIndex = CAMERA_ID_ANY;
+    protected int mFrameWidth;
+    protected int mFrameHeight;
+    protected int mMaxHeight;
+    protected int mMaxWidth;
+    private Bitmap mCacheBitmap;
+    private static final int MAX_UNSPECIFIED = -1;
+    private FrameImage frameImageListener;
 
+    public CameraPreview(int width, int height, int cameraId) {
+        this.cameraId = cameraId;
+        this.width = width;
+        this.height = height;
+        mMaxWidth = MAX_UNSPECIFIED;
+        mMaxHeight = MAX_UNSPECIFIED;
+        connectCamera(width, height);
+    }
 
+    public CameraPreview(int width, int height, int cameraId, FrameImage frameImageListener) {
+        this.cameraId = cameraId;
+        this.width = width;
+        this.height = height;
+        mMaxWidth = MAX_UNSPECIFIED;
+        mMaxHeight = MAX_UNSPECIFIED;
+        this.frameImageListener = frameImageListener;
+        connectCamera(width, height);
+    }
 
-    public static class JavaCameraSizeAccessor implements ListItemAccessor {
+    private boolean connectCamera(int width, int height) {
+        /* 1. We need to instantiate camera
+         * 2. We need to start thread which will be getting frames
+         */
+        /* First step - initialize camera connection */
+        Log.d(TAG, "Connecting to camera");
+        if (!initializeCamera(width, height))
+            return false;
+        mCameraFrameReady = false;
+        /* now we can start update thread */
+        Log.d(TAG, "Starting processing thread");
+        mStopThread = false;
+        mThread = new Thread(new CameraWorker());
+        mThread.start();
 
-        @Override
-        public int getWidth(Object obj) {
-            Camera.Size size = (Camera.Size) obj;
+        return true;
+    }
 
-            return size.width;
+    public void destoryCamera() {
+        disconnectCamera();
+    }
+
+    private void disconnectCamera() {
+        /* 1. We need to stop thread which updating the frames
+         * 2. Stop camera and release it
+         */
+        Log.d(TAG, "Disconnecting from camera");
+        try {
+            mStopThread = true;
+            Log.d(TAG, "Notify thread");
+            synchronized (this) {
+                this.notify();
+            }
+            Log.d(TAG, "Wating for thread");
+            if (mThread != null)
+                mThread.join();
+
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            mThread = null;
+
         }
 
-        @Override
-        public int getHeight(Object obj) {
-            Camera.Size size = (Camera.Size) obj;
-            return size.height;
+        /* Now release camera */
+        releaseCamera();
+
+        mCameraFrameReady = false;
+        if (mCacheBitmap != null) {
+            mCacheBitmap.recycle();
         }
     }
 
-    public JavaCameraView(Context context, int cameraId) {
-        super(context, cameraId);
-    }
-
-    public JavaCameraView(Context context, AttributeSet attrs) {
-        super(context, attrs);
-    }
 
     /**
      * 初始化相机
@@ -148,17 +207,17 @@ public class JavaCameraView extends CameraBridgeViewBase implements PreviewCallb
             try {
                 Camera.Parameters params = mCamera.getParameters();
                 Log.d(TAG, "getSupportedPreviewSizes()");
-                List<android.hardware.Camera.Size> sizes = params.getSupportedPreviewSizes();
+                List<Camera.Size> sizes = params.getSupportedPreviewSizes();
 
                 if (sizes != null) {
                     /* Select the size that fits surface considering maximum size allowed */
-                    Size frameSize = calculateCameraFrameSize(sizes, new JavaCameraSizeAccessor(), width, height);
+                    Size frameSize = calculateCameraFrameSize(sizes, new CameraSizeAccessor(), width, height);
 
                     params.setPreviewFormat(ImageFormat.NV21);
                     Log.d(TAG, "Set preview size to " + Integer.valueOf((int) frameSize.width) + "x" + Integer.valueOf((int) frameSize.height));
                     params.setPreviewSize((int) frameSize.width, (int) frameSize.height);
 
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH && !android.os.Build.MODEL.equals("GT-I9100"))
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH && !Build.MODEL.equals("GT-I9100"))
                         params.setRecordingHint(true);
 
                     List<String> FocusModes = params.getSupportedFocusModes();
@@ -172,16 +231,9 @@ public class JavaCameraView extends CameraBridgeViewBase implements PreviewCallb
                     mFrameWidth = params.getPreviewSize().width;
                     Log.v("--->>>>", "" + params.getPreviewSize().height);
                     mFrameHeight = params.getPreviewSize().height;
-
-                    if ((getLayoutParams().width == LayoutParams.MATCH_PARENT) && (getLayoutParams().height == LayoutParams.MATCH_PARENT))
-                        mScale = Math.min(((float) height) / mFrameHeight, ((float) width) / mFrameWidth);
-                    else
-                        mScale = 0;
-
-                    if (mFpsMeter != null) {
-                        mFpsMeter.setResolution(mFrameWidth, mFrameHeight);
-                    }
-
+                    mFpsMeter = new FpsMeter();
+                    mFpsMeter.setResolution(mFrameWidth, mFrameHeight);
+                    mFpsMeter.measure();
                     int size = mFrameWidth * mFrameHeight;
                     size = size * ImageFormat.getBitsPerPixel(params.getPreviewFormat()) / 8;
                     mBuffer = new byte[size];
@@ -195,9 +247,9 @@ public class JavaCameraView extends CameraBridgeViewBase implements PreviewCallb
 
                     AllocateCache();
 
-                    mCameraFrame = new JavaCameraFrame[2];
-                    mCameraFrame[0] = new JavaCameraFrame(mFrameChain[0], mFrameWidth, mFrameHeight);
-                    mCameraFrame[1] = new JavaCameraFrame(mFrameChain[1], mFrameWidth, mFrameHeight);
+                    mCameraFrame = new CameraFrameBean[2];
+                    mCameraFrame[0] = new CameraFrameBean(mFrameChain[0], mFrameWidth, mFrameHeight);
+                    mCameraFrame[1] = new CameraFrameBean(mFrameChain[1], mFrameWidth, mFrameHeight);
 
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
                         mSurfaceTexture = new SurfaceTexture(MAGIC_TEXTURE_ID);
@@ -221,12 +273,14 @@ public class JavaCameraView extends CameraBridgeViewBase implements PreviewCallb
         return result;
     }
 
+    /**
+     * 释放相机
+     */
     protected void releaseCamera() {
         synchronized (this) {
             if (mCamera != null) {
                 mCamera.stopPreview();
                 mCamera.setPreviewCallback(null);
-
                 mCamera.release();
             }
             mCamera = null;
@@ -241,61 +295,47 @@ public class JavaCameraView extends CameraBridgeViewBase implements PreviewCallb
         }
     }
 
-    private boolean mCameraFrameReady = false;
-
-    @Override
-    protected boolean connectCamera(int width, int height) {
-
-        /* 1. We need to instantiate camera
-         * 2. We need to start thread which will be getting frames
-         */
-        /* First step - initialize camera connection */
-        Log.d(TAG, "Connecting to camera");
-        if (!initializeCamera(width, height))
-            return false;
-
-        mCameraFrameReady = false;
-
-        /* now we can start update thread */
-        Log.d(TAG, "Starting processing thread");
-        mStopThread = false;
-        mThread = new Thread(new CameraWorker());
-        mThread.start();
-
-        return true;
+    protected void AllocateCache() {
+        mCacheBitmap = Bitmap.createBitmap(mFrameWidth, mFrameHeight, Bitmap.Config.ARGB_8888);
     }
 
-    @Override
-    protected void disconnectCamera() {
-        /* 1. We need to stop thread which updating the frames
-         * 2. Stop camera and release it
-         */
-        Log.d(TAG, "Disconnecting from camera");
-        try {
-            mStopThread = true;
-            Log.d(TAG, "Notify thread");
-            synchronized (this) {
-                this.notify();
+    /**
+     * This helper method can be called by subclasses to select camera preview size.
+     * It goes over the list of the supported preview sizes and selects the maximum one which
+     * fits both values set via setMaxFrameSize() and surface frame allocated for this view
+     *
+     * @param supportedSizes
+     * @param surfaceWidth
+     * @param surfaceHeight
+     * @return optimal frame size
+     */
+    protected Size calculateCameraFrameSize(List<?> supportedSizes, CameraListItemAccessor accessor, int surfaceWidth, int surfaceHeight) {
+        int calcWidth = 0;
+        int calcHeight = 0;
+
+        int maxAllowedWidth = (mMaxWidth != MAX_UNSPECIFIED && mMaxWidth < surfaceWidth) ? mMaxWidth : surfaceWidth;
+        int maxAllowedHeight = (mMaxHeight != MAX_UNSPECIFIED && mMaxHeight < surfaceHeight) ? mMaxHeight : surfaceHeight;
+
+        for (Object size : supportedSizes) {
+            int width = accessor.getWidth(size);
+            int height = accessor.getHeight(size);
+
+            if (width <= maxAllowedWidth && height <= maxAllowedHeight) {
+                if (width >= calcWidth && height >= calcHeight) {
+                    calcWidth = (int) width;
+                    calcHeight = (int) height;
+                }
             }
-            Log.d(TAG, "Wating for thread");
-            if (mThread != null)
-                mThread.join();
-
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        } finally {
-            mThread = null;
-
         }
-
-        /* Now release camera */
-        releaseCamera();
-
-        mCameraFrameReady = false;
+        return new Size(calcWidth, calcHeight);
     }
 
+
+    //底层相机回调帧画面
+
     @Override
-    public void onPreviewFrame(byte[] frame, Camera arg1) {
+    public void onPreviewFrame(byte[] frame, Camera camera) {
+        //处理每帧画面
         if (BuildConfig.DEBUG)
             Log.d(TAG, "Preview Frame received. Frame size: " + frame.length);
         synchronized (this) {
@@ -307,48 +347,16 @@ public class JavaCameraView extends CameraBridgeViewBase implements PreviewCallb
             mCamera.addCallbackBuffer(mBuffer);
     }
 
-    public class JavaCameraFrame implements CvCameraViewFrame {
-        @Override
-        public Mat gray() {
-            return mYuvFrameData.submat(0, mHeight, 0, mWidth);
-        }
-
-        @Override
-        public Mat rgba() {
-            Imgproc.cvtColor(mYuvFrameData, mRgba, Imgproc.COLOR_YUV2RGBA_NV21, 4);
-            return mRgba;
-        }
-
-        public JavaCameraFrame(Mat Yuv420sp, int width, int height) {
-            super();
-            mWidth = width;
-            mHeight = height;
-            mYuvFrameData = Yuv420sp;
-            mRgba = new Mat();
-        }
-
-        public void release() {
-            mRgba.release();
-        }
-
-        private Mat mYuvFrameData;
-        private Mat mRgba;
-        private int mWidth;
-        private int mHeight;
-    }
-
-
-
     private class CameraWorker implements Runnable {
 
         @Override
         public void run() {
             do {
                 boolean hasFrame = false;
-                synchronized (JavaCameraView.this) {
+                synchronized (CameraPreview.this) {
                     try {
                         while (!mCameraFrameReady && !mStopThread) {
-                            JavaCameraView.this.wait();
+                            CameraPreview.this.wait();
                         }
                     } catch (InterruptedException e) {
                         e.printStackTrace();
@@ -361,8 +369,45 @@ public class JavaCameraView extends CameraBridgeViewBase implements PreviewCallb
                 }
 
                 if (!mStopThread && hasFrame) {
-                    if (!mFrameChain[1 - mChainIdx].empty())
-                        deliverAndDrawFrame(mCameraFrame[1 - mChainIdx]);
+                    if (!mFrameChain[1 - mChainIdx].empty()) {
+
+                        //deliverAndDrawFrame(mCameraFrame[1 - mChainIdx]);
+                        //处理每帧
+                        Mat modified;
+                        CameraFrameBean frame = mCameraFrame[1 - mChainIdx];
+                        modified = frame.rgba();
+                        boolean bmpValid = true;
+                        if (modified != null) {
+                            try {
+                                Utils.matToBitmap(modified, mCacheBitmap);
+                            } catch (Exception e) {
+                                Log.e(TAG, "Mat type: " + modified);
+                                Log.e(TAG, "Bitmap type: " + mCacheBitmap.getWidth() + "*" + mCacheBitmap.getHeight());
+                                Log.e(TAG, "Utils.matToBitmap() throws an exception: " + e.getMessage());
+                                bmpValid = false;
+                            }
+                        }
+
+                        if (bmpValid && mCacheBitmap != null) {
+                            String fps = "";
+                            if (mFpsMeter != null) {
+                                 mFpsMeter.measure();
+                            }
+                           // if (frameImageListener != null) {
+//                                //获取当前Texture
+                                int[] renderTextures = new int[1];
+                                GLES20.glGenTextures(1, renderTextures, 0);
+                                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, renderTextures[0]);
+                                GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, mCacheBitmap, 0);
+                                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
+//                                //Log.i("------->>>>>>","创建帧mCacheBitmap:"+frame.rgba());
+//                                //放入队列当中
+//                                DoubleBufferQueue.getInst().push(new FrameImageBean(mCacheBitmap,renderTextures[0], mCacheBitmap.getWidth(), mCacheBitmap.getHeight(), fps));
+                                frameImageListener.onCameraFrame(frame, mCacheBitmap);
+                          //  }
+                        }
+                    }
+
                 }
             } while (!mStopThread);
             Log.d(TAG, "Finish processing thread");

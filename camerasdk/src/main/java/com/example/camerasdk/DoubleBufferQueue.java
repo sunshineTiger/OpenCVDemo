@@ -1,11 +1,13 @@
-package com.example.opencvdemo;
+package com.example.camerasdk;
+
+import android.util.Log;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public class DoubleBufferQueue {
-    private List<PreviewFrameBean> readList = new ArrayList<PreviewFrameBean>();
-    private List<PreviewFrameBean> writeList = new ArrayList<PreviewFrameBean>();
+    private List<FrameImageBean> readList = new ArrayList<FrameImageBean>();
+    private List<FrameImageBean> writeList = new ArrayList<FrameImageBean>();
     private static DoubleBufferQueue queue = new DoubleBufferQueue();
 
     private DoubleBufferQueue() {
@@ -21,8 +23,9 @@ public class DoubleBufferQueue {
      *
      * @param value
      */
-    public void push(PreviewFrameBean value) {
+    public void push(FrameImageBean value) {
         synchronized (writeList) {
+           // Log.i("------->>>>>>","添加新帧图片");
             writeList.add(0, value);
         }
     }
@@ -43,7 +46,7 @@ public class DoubleBufferQueue {
      *
      * @return
      */
-    public List<PreviewFrameBean> getReadList() {
+    public List<FrameImageBean> getReadList() {
         return readList;
     }
 
@@ -53,7 +56,8 @@ public class DoubleBufferQueue {
     public void swap() {
         synchronized (writeList) {
             if (null != writeList && writeList.size() != 0) {
-                List<PreviewFrameBean> temp = readList;
+               // Log.i("------->>>>>>","交换队列");
+                List<FrameImageBean> temp = readList;
                 readList = writeList;
                 writeList = temp;
                 writeList.clear();

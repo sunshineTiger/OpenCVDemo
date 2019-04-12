@@ -6,11 +6,8 @@
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
-    <org.opencv.android.JavaCameraView
-        android:id="@+id/myJavaCameraView"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        app:camera_id="any"
-        app:show_fps="true" />
-
+    <FrameLayout
+        android:id="@+id/layout"
+        android:layout_width="100dp"
+        android:layout_height="100dp"></FrameLayout>
 </android.support.constraint.ConstraintLayout>

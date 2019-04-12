@@ -1,1 +1,1 @@
-include ':app', ':OpenCVLibrary320'
+include ':app', ':OpenCVLibrary320', ':camerasdk'

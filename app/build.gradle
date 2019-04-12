@@ -34,6 +34,7 @@ dependencies {
     //将打好jar包，添加到依赖中
     //    implementation fileTree(dir: "$buildDir/native-libs", include: 'native-libs.jar')
     implementation project(':OpenCVLibrary320')
+    implementation project(':camerasdk')
 }
 //以下很重要 //将添加的.so文件，打包成jar
 //task nativeLibsToJar(type: Jar, description: 'create a jar archive of the native libs') {
