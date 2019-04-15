@@ -7,32 +7,34 @@ import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.widget.ImageView;
 
-import com.example.camerasdk.DoubleBufferQueue;
-import com.example.camerasdk.FrameImageBean;
 import com.example.camerasdk.android.camera.CameraFrameBean;
 import com.example.camerasdk.android.camera.CameraPreview;
+import com.example.camerasdk.android.camera.CameraPreview2;
 import com.example.camerasdk.interfaces.FrameImage;
 
-import java.util.List;
+import org.opencv.core.Mat;
 
 public class ImagePreviewActivity extends AppCompatActivity {
 
     static {
         System.loadLibrary("opencv_java3");
-        System.loadLibrary("opencv_java");
+        //System.loadLibrary("native-lib");
     }
 
     private ImageView previewImage;
-    CameraPreview cameraPreview;
-    private DoubleBufferQueue queue = DoubleBufferQueue.getInst();
-    private List<FrameImageBean> readList = queue.getReadList();
+    CameraPreview2 cameraPreview;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_camera);
         previewImage = findViewById(R.id.previewImage);
-        cameraPreview = new CameraPreview(640, 480, 0, new FrameImage() {
+        //interfaceCallback();
+        queueList();
+    }
+
+    private void interfaceCallback() {
+        cameraPreview = new CameraPreview2(640, 480, 0, new FrameImage() {
 
             @Override
             public void onCameraFrame(CameraFrameBean inputFrame, final Bitmap bitmap) {
@@ -44,31 +46,42 @@ public class ImagePreviewActivity extends AppCompatActivity {
                 });
 
             }
+
+            @Override
+            public void onCameraFramebitmap(final Mat rgba, final Mat gray, final Bitmap bitmap) {
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        Log.v("----------->>>>>>>>>", "rgba size:" + rgba.size());
+                        Log.v("----------->>>>>>>>>", "gray size:" + gray.size());
+                        previewImage.setImageBitmap(bitmap);  //预览
+                    }
+                });
+            }
         });
-        //cameraPreview = new CameraPreview(640, 480, 0);
-//        Thread thread = new Thread(new Runnable() {
-//            @Override
-//            public void run() {
-//                while (true) {
-//
-//                    runOnUiThread(new Runnable() {
-//                        @Override
-//                        public void run() {
-//                            queue.swap();
-//                            readList = queue.getReadList();
-//                            if (readList.size() != 0) {
-//                                previewImage.setImageBitmap(readList.get(0).getBitmap());  //预览
-//                                readList.clear();
-//                            }
-//                        }
-//                    });
-//
-//
-//                }
-//
-//            }
-//        });
-//        thread.start();
+    }
+
+    private void queueList() {
+        cameraPreview = new CameraPreview2(640, 480, 0);
+        Thread thread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                while (true) {
+                    final Bitmap bimtap = (Bitmap) cameraPreview.getQueue().poll();
+                    if (null != bimtap) {
+                        Log.v(">----------->>>>>>>>>", cameraPreview.getQueue().hashCode() + cameraPreview.getQueue().size() + "  cameraPreview.bimtap()" + bimtap);
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                previewImage.setImageBitmap(bimtap);
+                            }
+                        });
+                    }
+                }
+
+            }
+        });
+        thread.start();
     }
 
     @Override
@@ -76,4 +89,6 @@ public class ImagePreviewActivity extends AppCompatActivity {
         super.onDestroy();
         cameraPreview.destoryCamera();
     }
+
+
 }

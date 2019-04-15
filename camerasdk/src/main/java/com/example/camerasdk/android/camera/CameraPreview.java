@@ -9,8 +9,6 @@ import android.opengl.GLUtils;
 import android.os.Build;
 import android.util.Log;
 
-import com.example.camerasdk.DoubleBufferQueue;
-import com.example.camerasdk.FrameImageBean;
 import com.example.camerasdk.interfaces.CameraListItemAccessor;
 import com.example.camerasdk.interfaces.FrameImage;
 
@@ -20,24 +18,22 @@ import org.opencv.android.Utils;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.Size;
+import org.opencv.imgproc.Imgproc;
 
-import java.util.Deque;
 import java.util.List;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class CameraPreview implements Camera.PreviewCallback {
     private static final String TAG = "CameraPreview";
     private static final int MAGIC_TEXTURE_ID = 10;//默认TEXTURE_ID
     private byte mBuffer[];
-    private Mat[] mFrameChain;
-    private int mChainIdx = 0;
-    protected FpsMeter mFpsMeter = null;
-    private Thread mThread;//每帧处理线程
-    private boolean mStopThread;//停止标志
-    protected Camera mCamera;
-    protected CameraFrameBean[] mCameraFrame;
     private SurfaceTexture mSurfaceTexture;
+    protected FpsMeter mFpsMeter = null;
+    protected Camera mCamera;
     private int cameraId;
-    private boolean mCameraFrameReady = false;
     private int width;
     private int height;
     public static final int CAMERA_ID_ANY = -1;
@@ -53,6 +49,12 @@ public class CameraPreview implements Camera.PreviewCallback {
     private Bitmap mCacheBitmap;
     private static final int MAX_UNSPECIFIED = -1;
     private FrameImage frameImageListener;
+    ExecutorService fixedThreadPool;
+    final long awaitTime = 5 * 1000;
+    private BlockingQueue<Bitmap> queue = new ArrayBlockingQueue(1024);
+    private int MaxThradSize = 3;
+    private Mat frameMat;
+    private Mat mRgba;
 
     public CameraPreview(int width, int height, int cameraId) {
         this.cameraId = cameraId;
@@ -81,13 +83,8 @@ public class CameraPreview implements Camera.PreviewCallback {
         Log.d(TAG, "Connecting to camera");
         if (!initializeCamera(width, height))
             return false;
-        mCameraFrameReady = false;
         /* now we can start update thread */
         Log.d(TAG, "Starting processing thread");
-        mStopThread = false;
-        mThread = new Thread(new CameraWorker());
-        mThread.start();
-
         return true;
     }
 
@@ -99,30 +96,24 @@ public class CameraPreview implements Camera.PreviewCallback {
         /* 1. We need to stop thread which updating the frames
          * 2. Stop camera and release it
          */
-        Log.d(TAG, "Disconnecting from camera");
-        try {
-            mStopThread = true;
-            Log.d(TAG, "Notify thread");
-            synchronized (this) {
-                this.notify();
-            }
-            Log.d(TAG, "Wating for thread");
-            if (mThread != null)
-                mThread.join();
-
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        } finally {
-            mThread = null;
-
-        }
-
+        /* 1. We need to stop thread which updating the frames
+         * 2. Stop camera and release it
+         */
         /* Now release camera */
         releaseCamera();
 
-        mCameraFrameReady = false;
-        if (mCacheBitmap != null) {
-            mCacheBitmap.recycle();
+        try {
+            if (fixedThreadPool == null)
+                return;
+            fixedThreadPool.shutdown();
+            if (fixedThreadPool.awaitTermination(awaitTime, TimeUnit.MILLISECONDS)) {
+                fixedThreadPool.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+            fixedThreadPool.shutdownNow();
+        } finally {
+            fixedThreadPool = null;
         }
     }
 
@@ -241,15 +232,10 @@ public class CameraPreview implements Camera.PreviewCallback {
                     mCamera.addCallbackBuffer(mBuffer);
                     mCamera.setPreviewCallbackWithBuffer(this);
 
-                    mFrameChain = new Mat[2];
-                    mFrameChain[0] = new Mat(mFrameHeight + (mFrameHeight / 2), mFrameWidth, CvType.CV_8UC1);
-                    mFrameChain[1] = new Mat(mFrameHeight + (mFrameHeight / 2), mFrameWidth, CvType.CV_8UC1);
-
+                    frameMat = new Mat(mFrameHeight + (mFrameHeight / 2), mFrameWidth, CvType.CV_8UC1);
+                    mRgba = new Mat();
                     AllocateCache();
 
-                    mCameraFrame = new CameraFrameBean[2];
-                    mCameraFrame[0] = new CameraFrameBean(mFrameChain[0], mFrameWidth, mFrameHeight);
-                    mCameraFrame[1] = new CameraFrameBean(mFrameChain[1], mFrameWidth, mFrameHeight);
 
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
                         mSurfaceTexture = new SurfaceTexture(MAGIC_TEXTURE_ID);
@@ -284,14 +270,6 @@ public class CameraPreview implements Camera.PreviewCallback {
                 mCamera.release();
             }
             mCamera = null;
-            if (mFrameChain != null) {
-                mFrameChain[0].release();
-                mFrameChain[1].release();
-            }
-            if (mCameraFrame != null) {
-                mCameraFrame[0].release();
-                mCameraFrame[1].release();
-            }
         }
     }
 
@@ -336,12 +314,11 @@ public class CameraPreview implements Camera.PreviewCallback {
     @Override
     public void onPreviewFrame(byte[] frame, Camera camera) {
         //处理每帧画面
+        Log.v("------>>>>>>", "处理每帧画面");
         if (BuildConfig.DEBUG)
             Log.d(TAG, "Preview Frame received. Frame size: " + frame.length);
-        synchronized (this) {
-            mFrameChain[mChainIdx].put(0, 0, frame);
-            mCameraFrameReady = true;
-            this.notify();
+        if (fixedThreadPool != null) {
+            fixedThreadPool.execute(new CameraWorker(frame));
         }
         if (mCamera != null)
             mCamera.addCallbackBuffer(mBuffer);
@@ -349,71 +326,51 @@ public class CameraPreview implements Camera.PreviewCallback {
 
     private class CameraWorker implements Runnable {
 
+        private byte[] frameData;
+
+        public CameraWorker(byte[] frame) {
+            this.frameData = frame;
+        }
+
         @Override
         public void run() {
-            do {
-                boolean hasFrame = false;
-                synchronized (CameraPreview.this) {
-                    try {
-                        while (!mCameraFrameReady && !mStopThread) {
-                            CameraPreview.this.wait();
-                        }
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                    if (mCameraFrameReady) {
-                        mChainIdx = 1 - mChainIdx;
-                        mCameraFrameReady = false;
-                        hasFrame = true;
-                    }
+            frameMat.put(0, 0, frameData);
+            Mat gray = frameMat.submat(0, mFrameHeight, 0, mFrameWidth);
+            Imgproc.cvtColor(frameMat, mRgba, Imgproc.COLOR_YUV2RGBA_NV21, 4);
+            boolean bmpValid = true;
+            if (mRgba != null) {
+                try {
+                    Utils.matToBitmap(mRgba, mCacheBitmap);
+                } catch (Exception e) {
+                    Log.e(TAG, "Mat type: " + mRgba);
+                    Log.e(TAG, "Bitmap type: " + mCacheBitmap.getWidth() + "*" + mCacheBitmap.getHeight());
+                    Log.e(TAG, "Utils.matToBitmap() throws an exception: " + e.getMessage());
+                    bmpValid = false;
                 }
-
-                if (!mStopThread && hasFrame) {
-                    if (!mFrameChain[1 - mChainIdx].empty()) {
-
-                        //deliverAndDrawFrame(mCameraFrame[1 - mChainIdx]);
-                        //处理每帧
-                        Mat modified;
-                        CameraFrameBean frame = mCameraFrame[1 - mChainIdx];
-                        modified = frame.rgba();
-                        boolean bmpValid = true;
-                        if (modified != null) {
-                            try {
-                                Utils.matToBitmap(modified, mCacheBitmap);
-                            } catch (Exception e) {
-                                Log.e(TAG, "Mat type: " + modified);
-                                Log.e(TAG, "Bitmap type: " + mCacheBitmap.getWidth() + "*" + mCacheBitmap.getHeight());
-                                Log.e(TAG, "Utils.matToBitmap() throws an exception: " + e.getMessage());
-                                bmpValid = false;
-                            }
-                        }
-
-                        if (bmpValid && mCacheBitmap != null) {
-                            String fps = "";
-                            if (mFpsMeter != null) {
-                                 mFpsMeter.measure();
-                            }
-                           // if (frameImageListener != null) {
-//                                //获取当前Texture
-                                int[] renderTextures = new int[1];
-                                GLES20.glGenTextures(1, renderTextures, 0);
-                                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, renderTextures[0]);
-                                GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, mCacheBitmap, 0);
-                                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
-//                                //Log.i("------->>>>>>","创建帧mCacheBitmap:"+frame.rgba());
-//                                //放入队列当中
-//                                DoubleBufferQueue.getInst().push(new FrameImageBean(mCacheBitmap,renderTextures[0], mCacheBitmap.getWidth(), mCacheBitmap.getHeight(), fps));
-                                frameImageListener.onCameraFrame(frame, mCacheBitmap);
-                          //  }
-                        }
+                if (bmpValid && mCacheBitmap != null) {
+                    if (mFpsMeter != null)
+                        mFpsMeter.measure();
+//                    if (null != frameImageListener) {
+//                        frameImageListener.onCameraFramebitmap(mRgba, gray, mCacheBitmap);
+//                    } else {
+                    if (queue.offer(mCacheBitmap)) {
+                        //向队列添加数据成功
+                        Log.v("------>>>>>>", "向队列添加数据成功");
+                    } else {
+                        //向队列添加数据成功
+                        Log.v("------>>>>>>", "向队列添加数据失败");
                     }
+//                    }
+
 
                 }
-            } while (!mStopThread);
-            Log.d(TAG, "Finish processing thread");
+                Log.d(TAG, "Finish processing thread");
+            }
         }
     }
-
+    public BlockingQueue getQueue() {
+        return queue;
+    }
     public Camera getCamera() {
         return mCamera;
     }
